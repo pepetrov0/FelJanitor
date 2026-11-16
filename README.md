@@ -1,7 +1,7 @@
 # Fel Janitor
 
 ![WoW 3.3.5a (WotLK)](https://img.shields.io/badge/WoW-3.3.5a%20WotLK-a335ee?style=flat-square)
-![Version](https://img.shields.io/badge/version-1.2.0-9482c9?style=flat-square)
+![Version](https://img.shields.io/badge/version-1.2.1-9482c9?style=flat-square)
 
 Soul Shards that clean up after themselves.
 
@@ -26,7 +26,7 @@ Put `FelJanitor.toc` and `FelJanitor.lua` in `Interface/AddOns/FelJanitor`, then
 | `/fj on` / `off` / `toggle` | Enable or disable cleanup |
 | `/fj min <n>` | Number of Soul Shards to keep (default 10; `0` deletes all) |
 | `/fj delay <seconds>` | How long you must be idle before a cleanup, 1–60 (default 5) |
-| `/fj verbose` | Toggle a chat line each time shards are deleted |
+| `/fj verbose` | Toggle the chat line reporting each cleanup — shards moved or deleted (default on) |
 | `/fj status` | Show whether it is on, the minimum, and how many shards you carry |
 | `/fj` | Status plus the command list |
 

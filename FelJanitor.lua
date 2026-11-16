@@ -33,7 +33,7 @@ local function LogLoad(hint) Log("v" .. ADDON_VERSION .. " loaded." .. (hint and
 ---------------------------------------------------------------------------
 -- Data
 ---------------------------------------------------------------------------
-local DEFAULTS = { enabled = true, minimum = 10, delay = 5 }
+local DEFAULTS = { enabled = true, minimum = 10, delay = 5, verbose = true }
 local MAX_DELAY = 60
 
 local function InitDB()
@@ -124,7 +124,13 @@ local function Sweep()
 	if #loose > 0 and #freeSoul > 0 then
 		-- moved shards stay locked until the server confirms; the BAG_UPDATE
 		-- that follows triggers another sweep to handle whatever is left
-		if MoveToSoulBags(loose, freeSoul) > 0 then return true end
+		local moved = MoveToSoulBags(loose, freeSoul)
+		if moved > 0 then
+			if db.verbose then
+				Log(string.format("moved %d Soul Shard%s into your soul bag.", moved, moved == 1 and "" or "s"))
+			end
+			return true
+		end
 	end
 
 	local excess = math.min(total - db.minimum, #loose)
@@ -225,7 +231,7 @@ local function PrintHelp()
 	DEFAULT_CHAT_FRAME:AddMessage("  /fj on | off | toggle  - enable or disable")
 	DEFAULT_CHAT_FRAME:AddMessage("  /fj min <n>  - Soul Shards to keep (default 10)")
 	DEFAULT_CHAT_FRAME:AddMessage("  /fj delay <seconds>  - how long you must be idle before a cleanup (default 5)")
-	DEFAULT_CHAT_FRAME:AddMessage("  /fj verbose  - report each cleanup in chat")
+	DEFAULT_CHAT_FRAME:AddMessage("  /fj verbose  - report each cleanup in chat (default on)")
 	DEFAULT_CHAT_FRAME:AddMessage("  /fj status  - show what it is doing")
 end
 
