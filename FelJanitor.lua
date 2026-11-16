@@ -1,12 +1,15 @@
 --[[ Fel Janitor - Soul Shard cleanup for WotLK 3.3.5
-     Whenever the warlock is out of combat, deletes Soul Shards until only
+     Whenever the warlock is idle, deletes Soul Shards until only
      the configured minimum is left (10 by default). Loose shards are first
      moved into free soul bag slots; shards in a soul bag count toward the
      minimum but are never deleted - only loose ones in regular bags are.
-     Nothing is ever deleted in combat.
+     Nothing is ever deleted in combat. "Idle" means out of combat, not
+     looting, casting or holding an item, and no vendor/bank/mail/trade/
+     auction window open, for the delay (5 seconds by default).
 
      /fj on|off|toggle   enable or disable
      /fj min <n>         shards to keep
+     /fj delay <s>       seconds you must be idle before a cleanup (default 5)
      /fj status          show what it is doing
      (long form: /feljanitor)
 
@@ -30,7 +33,8 @@ local function LogLoad(hint) Log("v" .. ADDON_VERSION .. " loaded." .. (hint and
 ---------------------------------------------------------------------------
 -- Data
 ---------------------------------------------------------------------------
-local DEFAULTS = { enabled = true, minimum = 10 }
+local DEFAULTS = { enabled = true, minimum = 10, delay = 5 }
+local MAX_DELAY = 60
 
 local function InitDB()
 	FelJanitorDB = FelJanitorDB or {}
@@ -95,20 +99,32 @@ local function MoveToSoulBags(loose, freeSoul)
 	return moved
 end
 
--- Out of combat, and never while the player is holding something on the
--- cursor: first move loose shards into soul bags, then delete loose shards
--- above the minimum. Shards in soul bags count toward the minimum but are
--- never deleted.
+local lootOpen = false
+local function Shown(f) return f and f:IsShown() end
+
+-- Is the player doing something a cleanup would get in the way of?
+local function PlayerBusy()
+	if InCombatLockdown() or UnitAffectingCombat("player") then return true end
+	if CursorHasItem() or GetCursorInfo() then return true end
+	if SpellIsTargeting() or UnitCastingInfo("player") or UnitChannelInfo("player") then return true end
+	if lootOpen or Shown(LootFrame) then return true end
+	return Shown(MerchantFrame) or Shown(BankFrame) or Shown(GuildBankFrame) or Shown(TradeFrame)
+		or Shown(MailFrame) or Shown(AuctionFrame) or Shown(StackSplitFrame) or false
+end
+
+-- Only when idle (see PlayerBusy): first move loose shards into soul bags,
+-- then delete loose shards above the minimum. Shards in soul bags count
+-- toward the minimum but are never deleted. Returns true if shards were
+-- moved (the rest is handled by the sweep their BAG_UPDATE triggers).
 local function Sweep()
 	if not db or not db.enabled or MY_CLASS ~= "WARLOCK" then return end
-	if InCombatLockdown() or UnitAffectingCombat("player") then return end
-	if CursorHasItem() or GetCursorInfo() then return end
+	if PlayerBusy() then return end
 
 	local loose, total, freeSoul = ScanBags()
 	if #loose > 0 and #freeSoul > 0 then
 		-- moved shards stay locked until the server confirms; the BAG_UPDATE
 		-- that follows triggers another sweep to handle whatever is left
-		if MoveToSoulBags(loose, freeSoul) > 0 then return end
+		if MoveToSoulBags(loose, freeSoul) > 0 then return true end
 	end
 
 	local excess = math.min(total - db.minimum, #loose)
@@ -134,26 +150,43 @@ end
 -- Events
 ---------------------------------------------------------------------------
 local frame = CreateFrame("Frame")
-local pending -- a sweep is queued for the next frame
+local POLL = 0.5
+-- pending: a sweep is waiting for the player to go idle.
+-- lastBusy: the last time the player was busy (or the bags changed).
+-- followUntil: our own soul bag moves fire BAG_UPDATE; until then those don't
+-- restart the idle delay, so the deletes follow the moves straight away.
+local pending, lastBusy, followUntil, acc = false, 0, 0, 0
 
--- BAG_UPDATE fires once per bag, often several in a row; batch them.
+-- Ask for a sweep once the player has been idle for db.delay seconds.
+-- BAG_UPDATE fires once per bag, often several in a row; they all just
+-- restart the wait.
 local function Queue()
-	if pending then return end
+	if not db or not db.enabled or MY_CLASS ~= "WARLOCK" then return end
+	local now = GetTime()
+	if now > followUntil then lastBusy = now end
 	pending = true
 	frame:Show()
 end
 
 frame:Hide()
-frame:SetScript("OnUpdate", function(self)
-	self:Hide()
+frame:SetScript("OnUpdate", function(self, elapsed)
+	acc = acc + elapsed
+	if acc < POLL then return end
+	acc = 0
+	if not pending then return self:Hide() end
+	local now = GetTime()
+	if PlayerBusy() then lastBusy = now; return end
+	if now - lastBusy < db.delay then return end
 	pending = false
-	Sweep()
+	if Sweep() then followUntil = now + 2 end
 end)
 
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 frame:RegisterEvent("BAG_UPDATE")
+frame:RegisterEvent("LOOT_OPENED")
+frame:RegisterEvent("LOOT_CLOSED")
 
 frame:SetScript("OnEvent", function(self, event, arg1)
 	if event == "ADDON_LOADED" then
@@ -167,7 +200,9 @@ frame:SetScript("OnEvent", function(self, event, arg1)
 		end
 		return
 	end
-	-- combat ended, bags changed, or a zone-in: tidy up if out of combat
+	if event == "LOOT_OPENED" then lootOpen = true; return end
+	if event == "LOOT_CLOSED" then lootOpen = false end
+	-- combat ended, loot closed, bags changed, or a zone-in: tidy up once idle
 	Queue()
 end)
 
@@ -181,14 +216,15 @@ local function Status()
 		return
 	end
 	local when = UnitAffectingCombat("player") and "in combat" or "out of combat"
-	Log(string.format("Fel Janitor is %s (%s). Keeping %d; carrying %d Soul Shards.",
-		state, when, db.minimum, CountShards()))
+	Log(string.format("Fel Janitor is %s (%s). Keeping %d; carrying %d Soul Shards. Idle delay %ss.",
+		state, when, db.minimum, CountShards(), db.delay))
 end
 
 local function PrintHelp()
 	Log("commands:")
 	DEFAULT_CHAT_FRAME:AddMessage("  /fj on | off | toggle  - enable or disable")
 	DEFAULT_CHAT_FRAME:AddMessage("  /fj min <n>  - Soul Shards to keep (default 10)")
+	DEFAULT_CHAT_FRAME:AddMessage("  /fj delay <seconds>  - how long you must be idle before a cleanup (default 5)")
 	DEFAULT_CHAT_FRAME:AddMessage("  /fj verbose  - report each cleanup in chat")
 	DEFAULT_CHAT_FRAME:AddMessage("  /fj status  - show what it is doing")
 end
@@ -217,6 +253,15 @@ SlashCmdList["FELJANITOR"] = function(msg)
 			return
 		end
 		db.minimum = n
+		Status()
+		Queue()
+	elseif cmd == "delay" then
+		local n = tonumber(arg)
+		if not n or n < 1 or n > MAX_DELAY then
+			Log("usage: /fj delay <seconds, 1 to " .. MAX_DELAY .. ">  (now " .. db.delay .. ")")
+			return
+		end
+		db.delay = n
 		Status()
 		Queue()
 	elseif cmd == "verbose" then
