@@ -1,7 +1,8 @@
 --[[ Fel Janitor - Soul Shard cleanup for WotLK 3.3.5
      Whenever the warlock is out of combat, deletes Soul Shards until only
-     the configured minimum is left (10 by default). Shards in regular bags
-     go first, so the ones sitting in a soul bag are the ones kept.
+     the configured minimum is left (10 by default). Loose shards are first
+     moved into free soul bag slots; shards in a soul bag count toward the
+     minimum but are never deleted - only loose ones in regular bags are.
      Nothing is ever deleted in combat.
 
      /fj on|off|toggle   enable or disable
@@ -42,43 +43,78 @@ end
 ---------------------------------------------------------------------------
 -- Shards
 ---------------------------------------------------------------------------
--- Every unlocked Soul Shard in the backpack and bags, regular bags first so
--- the soul bag's shards are the last to go. Locked shards are skipped: they
--- are already being deleted or moved, and the next BAG_UPDATE recounts.
-local function FindShards()
-	local loose, bagged = {}, {}
+-- Scan the bags. Returns:
+--   loose      unlocked shards in regular bags ({bag, slot}) - the only
+--              ones that may be moved or deleted
+--   total      every shard carried, soul bag and locked ones included
+--   freeSoul   empty slots in soul bags ({bag, slot})
+-- Locked shards are counted but not touched: they are already being moved
+-- or deleted, and the next BAG_UPDATE recounts.
+local function ScanBags()
+	local loose, freeSoul, total = {}, {}, 0
 	for bag = 0, NUM_BAG_SLOTS do
 		local _, bagType = GetContainerNumFreeSlots(bag)
 		local isSoulBag = bagType and bit.band(bagType, SOUL_BAG_FAMILY) ~= 0
 		for slot = 1, GetContainerNumSlots(bag) do
-			if GetContainerItemID(bag, slot) == SOUL_SHARD then
+			local itemID = GetContainerItemID(bag, slot)
+			if itemID == SOUL_SHARD then
+				total = total + 1
 				local _, _, locked = GetContainerItemInfo(bag, slot)
-				if not locked then
-					table.insert(isSoulBag and bagged or loose, { bag, slot })
+				if not isSoulBag and not locked then
+					table.insert(loose, { bag, slot })
 				end
+			elseif isSoulBag and not itemID and not GetContainerItemInfo(bag, slot) then
+				table.insert(freeSoul, { bag, slot })
 			end
 		end
 	end
-	for _, s in ipairs(bagged) do table.insert(loose, s) end
-	return loose
+	return loose, total, freeSoul
 end
 
 local function CountShards()
 	return GetItemCount(SOUL_SHARD)
 end
 
--- Delete shards above the minimum. Out of combat only, and never while the
--- player is holding something on the cursor.
+-- Move loose shards into empty soul bag slots. Returns how many moved.
+local function MoveToSoulBags(loose, freeSoul)
+	local moved = 0
+	for i = 1, math.min(#loose, #freeSoul) do
+		PickupContainerItem(loose[i][1], loose[i][2])
+		local kind, itemID = GetCursorInfo()
+		if kind ~= "item" or itemID ~= SOUL_SHARD then
+			ClearCursor()
+			break
+		end
+		PickupContainerItem(freeSoul[i][1], freeSoul[i][2])
+		if CursorHasItem() then -- slot refused it; put the shard back and stop
+			ClearCursor()
+			break
+		end
+		moved = moved + 1
+	end
+	return moved
+end
+
+-- Out of combat, and never while the player is holding something on the
+-- cursor: first move loose shards into soul bags, then delete loose shards
+-- above the minimum. Shards in soul bags count toward the minimum but are
+-- never deleted.
 local function Sweep()
 	if not db or not db.enabled or MY_CLASS ~= "WARLOCK" then return end
 	if InCombatLockdown() or UnitAffectingCombat("player") then return end
 	if CursorHasItem() or GetCursorInfo() then return end
 
-	local shards = FindShards()
-	local excess = #shards - db.minimum
+	local loose, total, freeSoul = ScanBags()
+	if #loose > 0 and #freeSoul > 0 then
+		-- moved shards stay locked until the server confirms; the BAG_UPDATE
+		-- that follows triggers another sweep to handle whatever is left
+		if MoveToSoulBags(loose, freeSoul) > 0 then return end
+	end
+
+	local excess = math.min(total - db.minimum, #loose)
 	local deleted = 0
 	for i = 1, excess do
-		local bag, slot = shards[i][1], shards[i][2]
+		local bag, slot = loose[i][1], loose[i][2]
 		PickupContainerItem(bag, slot)
 		local kind, itemID = GetCursorInfo()
 		if kind == "item" and itemID == SOUL_SHARD then

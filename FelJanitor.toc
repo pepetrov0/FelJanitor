@@ -2,7 +2,7 @@
 ## Title: Fel Janitor
 ## Notes: Out of combat, deletes Soul Shards above a minimum you keep (10 by default). Use /fj.
 ## Author: Petar Petrov
-## Version: 1.0.0
+## Version: 1.1.0
 ## SavedVariablesPerCharacter: FelJanitorDB
 
 FelJanitor.lua
