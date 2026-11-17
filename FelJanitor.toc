@@ -2,7 +2,7 @@
 ## Title: Fel Janitor
 ## Notes: When you're idle, deletes Soul Shards above a minimum you keep (10 by default). Use /fj.
 ## Author: Petar Petrov
-## Version: 1.2.1
+## Version: 1.2.2
 ## SavedVariablesPerCharacter: FelJanitorDB
 
 FelJanitor.lua

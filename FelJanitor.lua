@@ -3,7 +3,7 @@
      the configured minimum is left (10 by default). Loose shards are first
      moved into free soul bag slots; shards in a soul bag count toward the
      minimum but are never deleted - only loose ones in regular bags are.
-     Nothing is ever deleted in combat. "Idle" means out of combat, not
+     Nothing is ever deleted in combat. "Idle" means alive, out of combat, not
      looting, casting or holding an item, and no vendor/bank/mail/trade/
      auction window open, for the delay (5 seconds by default).
 
@@ -104,6 +104,7 @@ local function Shown(f) return f and f:IsShown() end
 
 -- Is the player doing something a cleanup would get in the way of?
 local function PlayerBusy()
+	if UnitIsDeadOrGhost("player") then return true end -- items can't be moved while dead
 	if InCombatLockdown() or UnitAffectingCombat("player") then return true end
 	if CursorHasItem() or GetCursorInfo() then return true end
 	if SpellIsTargeting() or UnitCastingInfo("player") or UnitChannelInfo("player") then return true end

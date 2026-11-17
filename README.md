@@ -10,7 +10,7 @@ Soul Shards that clean up after themselves.
 ## Features
 
 - 🧹 **Automatic** — runs when combat ends, when your bags change, and on login / zone-in, once you have been idle for a few seconds (5 by default, `/fj delay`)
-- ⚔️ **Only when idle** — nothing happens in combat, while looting or casting, or while a vendor, bank, guild bank, mail, trade or auction window is open; shards you collect mid-fight stay until the fight is over
+- ⚔️ **Only when idle** — nothing happens while dead, in combat, while looting or casting, or while a vendor, bank, guild bank, mail, trade or auction window is open; shards you collect mid-fight stay until the fight is over
 - 👜 **Soul bag aware** — loose shards are moved into free soul bag slots; shards in a soul bag count toward your minimum but are never deleted, only the overflow in regular bags is
 - ✋ **Hands off the cursor** — if you are holding an item, it waits
 - 🟣 **Warlocks only** — on any other class it loads, says so and sits idle
